@@ -1,0 +1,36 @@
+{
+  "checkedAt": "2026-11-15T15:05:39.965Z",
+  "browser": "Microsoft Edge (installed Chromium)",
+  "offline": true,
+  "checks": [
+    "Standalone file renders all 179 resources with network offline",
+    "Desktop viewport has no page-level horizontal overflow",
+    "Real native resource dialog opens with evidence",
+    "Keyboard Escape closes native dialog",
+    "All 12 overlap clusters render with source evidence",
+    "Atomic needs catalogue renders all outcomes offline",
+    "Needs desktop layout has no horizontal overflow",
+    "One need exposes its multiple content instances",
+    "Bidirectional need/content navigation works in native browser",
+    "Potential gaps are separate from claimed direct coverage",
+    "Filtered needs CSV downloads only the matching needs",
+    "Live search filters in real browser",
+    "Filtered CSV downloads with matching source content",
+    "Mobile viewport has no page-level horizontal overflow",
+    "Expanded need evidence fits the mobile viewport",
+    "Proposed hub task links focus the correct section",
+    "Shareable deep-link state restores filter and resource dialog",
+    "Need deep link closes a resource modal and restores focused outcome",
+    "No runtime exceptions or remote page requests"
+  ],
+  "errors": [],
+  "remoteRequests": [],
+  "screenshots": [
+    "inventory-desktop.png",
+    "overlap-desktop.png",
+    "inventory-mobile.png",
+    "needs-desktop.png",
+    "need-evidence-desktop.png",
+    "needs-mobile.png"
+  ]
+}

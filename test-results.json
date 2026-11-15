@@ -1,0 +1,22 @@
+{
+  "checkedAt": "2026-11-15T15:05:27.133Z",
+  "tests": [
+    "Inventory IDs, URLs and graph references are unique and valid",
+    "Finding quotes are actual retrieved text, not invented claims",
+    "Core hub graph reflects three direct branch links and valid shortest hops",
+    "Atomic needs have valid bidirectional many-to-many mappings and scoped gaps",
+    "Need validation rejects false coverage, unavailable direct answers and false gaps",
+    "Initial inventory and six-view navigation render without runtime errors",
+    "Search, combined tags/audience, reset and no-results state work",
+    "Sorting, quick topic filters and table/card switching work",
+    "Resource detail, related-link navigation and risk drill-through work",
+    "Current sitemap search and proposed-hub routes work",
+    "CSV export and hash state work without errors",
+    "Hash navigation restores state and clears omitted filters",
+    "Needs filters distinguish multiple answers, gaps and unverified coverage",
+    "Need-to-content and content-to-need journeys preserve relationship meaning",
+    "Needs deep links restore the selected atomic need without stale resource filters",
+    "All local report links refer to existing deliverables"
+  ],
+  "passed": 16
+}

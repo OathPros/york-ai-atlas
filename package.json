@@ -1,0 +1,18 @@
+{
+  "name": "york-ai-atlas",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Independent, source-linked audit of York University's AI information and atomic user needs.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "check": "node --check app.js && node --check needs.cjs && node --check build-data.cjs && node --check package-report.cjs && node --check build-site.cjs && node --check test-dashboard.cjs && node --check test-browser.cjs && node --check test-pages.cjs",
+    "build": "node build-data.cjs && node package-report.cjs && node build-site.cjs",
+    "test": "node test-dashboard.cjs && node test-pages.cjs",
+    "test:browser": "node test-browser.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "30.1.2"
+  }
+}

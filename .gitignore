@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.browser-test-profile/
+.test-downloads/
+*.zip
+.env
+.env.*
+npm-debug.log*
+__pycache__/
