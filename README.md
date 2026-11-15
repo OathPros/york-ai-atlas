@@ -8,7 +8,7 @@ An independent, interactive audit of AI information published across York Univer
 
 Open `index.html` or the self-contained `York-AI-Atlas.html` in a browser. No server, sign-in or network connection is needed to explore the packaged snapshot; original source links require internet access.
 
-The atlas includes 179 grouped resources, 46 analyst-inferred atomic needs, 160 need-to-content relationships, 12 overlap/risk clusters and a seven-section proposed hub. These counts describe the captured audit, not a complete census. Coverage judgements and potential gaps need institutional owner and user validation. Multiple answers are not automatically redundant.
+The atlas includes 234 grouped resources, a catalogue of 1,047 atomic user questions under 105 parent jobs (1,565 quote-verified need-to-content relationships, York-wide search records and peer-university demand evidence), 12 overlap/risk clusters and a seven-section proposed hub. These counts describe the captured audit, not a complete census. Coverage judgements and potential gaps need institutional owner and user validation. Multiple answers are not automatically redundant.
 
 The interface supports search, combined filters, sorting, shareable URL fragments, source drill-through and CSV export. `briefing.html` provides a printable summary. Full CSV, structured data and evidence files accompany the report.
 
@@ -48,7 +48,7 @@ The browser check defaults to Microsoft Edge's standard Windows installation. Fo
 
 ## Source snapshot and maintenance
 
-`curation.cjs` holds reviewed resource summaries and consolidation findings. `needs.cjs` defines atomic needs, source mappings, coverage judgements and bounded gap hypotheses. Generated deliverables should be rebuilt after changing these sources.
+`curation.cjs` holds reviewed resource summaries and consolidation findings. `atomic-needs.json` is the source of truth for the atomic question catalogue (questions, parent jobs, verbatim evidence, York-wide search results and peer evidence); `atomic.cjs` validates every quote against captured text and computes coverage. `needs.cjs` holds the original 46 job-level needs, now used as parent jobs. `needs-urls.json` lists extra York pages found during the needs research, captured into `needs-sources.json` by `collect-needs.cjs`. Generated deliverables should be rebuilt after changing these sources.
 
 `sources.json`, `pdf-evidence.json` and `supplemental-evidence.json` retain the public-source extraction evidence. Evidence excerpts, URLs and retrieval metadata support the audit; source materials remain attributable to their original publishers. No licence to York source content or branding is granted by this repository.
 

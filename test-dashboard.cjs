@@ -77,6 +77,50 @@ test('Need validation rejects false coverage, unavailable direct answers and fal
   assert.throws(()=>buildNeeds(data.records,texts,[{...gap,gapSearch:null}]),/Gap needs bounded/);
   assert.throws(()=>buildNeeds(data.records,texts,[{...gap,gapSearch:{scopeIds:[],terms:[],limitation:''}}]),/must specify sources/);
 });
+test('Atomic catalogue: verbatim evidence, coverage rules, reverse maps and job roll-ups',()=>{
+  const {normalise,coverageOrder}=require('./atomic.cjs');
+  const ns=JSON.parse(fs.readFileSync(path.join(root,'needs-sources.json'),'utf8'));
+  const pages=[...source.pages,...ns.pages,...pdf];
+  const recText=r=>[texts.get(r.id),...pages.filter(p=>r.variants.includes(p.url)||r.variants.includes(p.finalUrl)).map(p=>p.text),r.id==='savy'?supplemental.text:''].map(normalise).join(' \u0000 ');
+  const A=data.atomicNeeds,byRec=new Map(data.records.map(r=>[r.id,r]));
+  assert.equal(new Set(A.map(n=>n.id)).size,A.length);
+  assert.ok(A.length>=800,'catalogue should stay granular');
+  const jobs=new Map(data.jobs.map(j=>[j.id,j]));
+  let quotes=0;
+  for(const n of A) {
+    assert.ok(n.question.endsWith('?'),n.id+' must be phrased as a question');
+    assert.ok(n.statement && n.yorkAnswer!==undefined && jobs.has(n.job) && coverageOrder.includes(n.coverage),n.id);
+    assert.ok(!/\b[mjnp]\d{1,4}\b/.test(n.conflictNote+n.yorkAnswer+n.question),n.id+' leaks internal keys');
+    assert.equal(new Set(n.mappings.map(m=>m.resourceId)).size,n.mappings.length);
+    for(const m of n.mappings) {
+      const r=byRec.get(m.resourceId);assert.ok(r,m.resourceId);assert.ok(r.atomicIds.includes(n.id));assert.ok(r.jobIds.includes(n.job));
+      const t=recText(r);for(const q of m.quotes) {quotes++;assert.ok(t.includes(normalise(q)),`${n.id}: quote not verbatim in ${r.id}: ${q.slice(0,60)}`);}
+    }
+    const direct=n.mappings.filter(m=>m.role==='Direct answer');
+    assert.equal(n.directCount,direct.length);
+    assert.equal(n.ownerCount,new Set(direct.map(m=>byRec.get(m.resourceId).owner)).size);
+    if(n.coverage==='Conflicting answers') assert.ok(n.directCount>0 && n.conflict && n.conflictNote);
+    else if(n.coverage==='Answered') assert.ok(n.directCount>0);
+    else if(n.coverage==='Partially answered') assert.ok(n.directCount===0 && n.mappings.length>0);
+    else assert.equal(n.mappings.length,0,n.id+' gap with mapped content');
+    if(n.coverage==='Gap: not found York-wide') assert.equal(n.search.status,'Not found');
+    assert.ok(n.origins.length,n.id+' has no need evidence');
+    assert.equal(n.origins.includes('Peer benchmark'),n.peers.length>0,n.id+' peer origin must cite peers');
+  }
+  assert.ok(quotes>1000);
+  for(const r of data.records) for(const id of r.atomicIds) assert.ok(A.find(n=>n.id===id).mappings.some(m=>m.resourceId===r.id));
+  for(const j of data.jobs) {
+    assert.deepEqual([...j.needIds].sort(),A.filter(n=>n.job===j.id).map(n=>n.id).sort(),j.id);
+    for(const c of coverageOrder) assert.equal(j.coverageCounts[c]||0,A.filter(n=>n.job===j.id&&n.coverage===c).length);
+  }
+  const m=data.atomicMeta;
+  assert.equal(m.total,A.length);assert.equal(m.multipleDirect,A.filter(n=>n.directCount>1).length);
+  for(const c of coverageOrder) assert.equal(m.coverageCounts[c]||0,A.filter(n=>n.coverage===c).length);
+  const csvRows=f=>fs.readFileSync(path.join(root,f),'utf8').trim().split(/\r?\n(?=(?:[^"]*"[^"]*")*[^"]*$)/).length-1;
+  assert.equal(csvRows('atomic-needs.csv'),A.length);
+  assert.equal(csvRows('need-jobs.csv'),data.jobs.length);
+  assert.equal(csvRows('atomic-need-content-map.csv'),A.reduce((k,n)=>k+n.mappings.length+n.raised.length,0));
+});
 const errors=[];
 const vc=new VirtualConsole();
 vc.on('jsdomError',e=>errors.push(e.message));
@@ -146,42 +190,58 @@ test('Hash navigation restores state and clears omitted filters',()=>{
   assert.match(d.getElementById('detail-title').textContent,/Senate/);
   click('#close-detail');
 });
-test('Needs filters distinguish multiple answers, gaps and unverified coverage',()=>{
+test('Atomic needs filters, matrix and layouts reflect the data',()=>{
   click('.tabs [data-tab="needs"]');
-  assert.equal(d.querySelectorAll('#need-list .need-card').length,data.needs.length);
-  input('needsMultiplicity','multiple');
-  assert.equal(d.querySelectorAll('#need-list .need-card').length,data.needs.filter(n=>n.directCount>1).length);
-  input('needsCoverage','Potential gap');assert.equal(d.querySelectorAll('#need-list .need-card').length,0);
-  click('[data-needs-reset]');input('needsCoverage','Potential gap');
-  assert.equal(d.querySelectorAll('#need-list .need-card').length,data.needs.filter(n=>n.coverage==='Potential gap').length);
-  assert.ok([...d.querySelectorAll('#need-list .need-counts strong')].every(e=>e.textContent==='0'));
+  const A=data.atomicNeeds,rows=()=>d.querySelectorAll('#need-list details.atomic').length;
+  assert.equal(rows(),A.length);
+  assert.equal(d.querySelectorAll('#need-list .job-group').length,new Set(A.map(n=>n.job)).size);
+  input('needsMultiplicity','multiple');assert.equal(rows(),A.filter(n=>n.directCount>1).length);
+  input('needsMultiplicity','owners');assert.equal(rows(),A.filter(n=>n.ownerCount>1).length);
+  input('needsMultiplicity','peer-only');assert.equal(rows(),A.filter(n=>!n.contentCount&&n.peers.length).length);
+  click('[data-needs-reset]');input('needsCoverage','Conflicting answers');
+  assert.equal(rows(),A.filter(n=>n.coverage==='Conflicting answers').length);
   click('#export-needs');assert.equal(downloads.at(-1),'york-ai-filtered-needs.csv');
-  click('[data-needs-reset]');input('needsAudience','Students');input('needsSearch','assessment','input');
-  assert.ok(d.querySelector('#need-course-permission'));
-  click('[data-needs-reset]');input('needsSort','most');
-  const counts=[...d.querySelectorAll('#need-list .need-counts strong')].map(e=>Number(e.textContent));
+  click('[data-needs-reset]');input('needsSearch','definitely-no-such-need-4471','input');assert.ok(d.querySelector('#need-list .empty'));
+  click('[data-needs-reset]');click('[data-needs-layout="table"]');
+  assert.equal(d.querySelectorAll('#need-list .need-table tbody tr').length,A.length);
+  input('needsSort','most');
+  const counts=[...d.querySelectorAll('#need-list .need-table tbody tr td:nth-child(5)')].map(e=>parseInt(e.firstChild.textContent,10));
   assert.deepEqual(counts,[...counts].sort((a,b)=>b-a));
+  click('[data-needs-reset]');click('[data-needs-layout="jobs"]');
+  const cell=[...d.querySelectorAll('[data-matrix]')].find(b=>b.dataset.matrix.endsWith('|Answered'));
+  const [dom,cov]=cell.dataset.matrix.split('|');click(`[data-matrix="${cell.dataset.matrix}"]`);
+  assert.equal(rows(),A.filter(n=>n.domain===dom&&n.coverage===cov).length);assert.equal(rows(),Number(cell.textContent));
+  assert.equal(d.getElementById('needsDomain').value,dom);assert.ok(w.location.hash.includes('needsDomain='+dom));
+  click('[data-needs-reset]');
 });
-test('Need-to-content and content-to-need journeys preserve relationship meaning',()=>{
-  click('[data-needs-reset]');click('#need-course-permission [data-need="need-course-permission"]');
-  assert.ok(d.querySelector('#need-course-permission .need-detail').open);
-  click('#need-course-permission [data-need-content]');
-  assert.equal(d.getElementById('resource-need').value,'need-course-permission');
-  assert.equal(cards().length,data.needs.find(n=>n.id==='need-course-permission').contentCount);
-  click('#resource-list [data-resource="students"]');
-  click('#detail [data-need="need-course-permission"]');
-  assert.equal(d.getElementById('detail').open,false);
-  assert.equal(d.getElementById('needs').hidden,false);
-  assert.equal(d.activeElement.id,'need-course-permission');
-  assert.ok(w.location.hash.includes('need=need-course-permission'));
+test('Atomic need detail shows verbatim evidence and journeys to content and back',()=>{
+  const n=data.atomicNeeds.find(n=>n.coverage==='Conflicting answers'&&n.directCount>1);
+  click(`#need-${n.id} summary`);
+  const det=d.getElementById('need-'+n.id);det.dispatchEvent(new w.Event('toggle'));
+  assert.ok(det.open);assert.equal(det.querySelectorAll('.need-mapping blockquote').length,n.mappings.reduce((k,m)=>k+m.quotes.length,0));
+  assert.ok(det.querySelector('.callout.warning').textContent.includes(n.conflictNote.slice(0,40)));
+  click(`#job-${n.job} [data-need-content]`);
+  assert.equal(d.getElementById('resource-need').value,n.job);
+  assert.equal(cards().length,data.records.filter(r=>r.jobIds.includes(n.job)).length);
+  const r=data.records.find(r=>r.atomicIds.includes(n.id));
+  click('#reset');click(`#resource-list [data-resource="${r.id}"]`);
+  click(`#detail [data-need="${n.id}"]`);
+  assert.equal(d.getElementById('detail').open,false);assert.equal(d.getElementById('needs').hidden,false);
+  assert.ok(d.getElementById('need-'+n.id).open);assert.equal(d.activeElement.closest('details').id,'need-'+n.id);
+  assert.ok(w.location.hash.includes('need='+n.id));
 });
-test('Needs deep links restore the selected atomic need without stale resource filters',()=>{
-  w.history.replaceState(null,'','#view=needs&need=need-human-review');
+test('Needs deep links restore atomic needs and parent jobs without stale filters',()=>{
+  const n=data.atomicNeeds.find(n=>n.coverage==='Gap: not found York-wide')||data.atomicNeeds[0];
+  w.history.replaceState(null,'','#view=needs&need='+n.id);
   w.dispatchEvent(new w.HashChangeEvent('hashchange'));
   assert.equal(d.getElementById('needs').hidden,false);
-  assert.ok(d.querySelector('#need-human-review .need-detail').open);
-  assert.equal(d.activeElement.id,'need-human-review');
+  assert.ok(d.getElementById('need-'+n.id).open);
+  assert.ok(d.querySelector(`#need-${n.id} .atomic-body`).textContent.includes(n.yorkAnswer.slice(0,30)));
   assert.equal(d.getElementById('resource-need').value,'');
+  w.history.replaceState(null,'','#view=needs&need=need-human-review');
+  w.dispatchEvent(new w.HashChangeEvent('hashchange'));
+  assert.equal(d.activeElement.id,'job-need-human-review');
+  assert.equal(errors.length,0,errors.join('\n'));
 });
 test('All local report links refer to existing deliverables',()=>{
   for(const a of d.querySelectorAll('a[href]')) {

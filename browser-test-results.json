@@ -1,19 +1,22 @@
 {
-  "checkedAt": "2026-11-15T15:05:39.965Z",
+  "checkedAt": "2026-11-15T16:27:34.924Z",
   "browser": "Microsoft Edge (installed Chromium)",
   "offline": true,
   "checks": [
-    "Standalone file renders all 179 resources with network offline",
+    "Standalone file renders all 234 resources with network offline",
     "Desktop viewport has no page-level horizontal overflow",
     "Real native resource dialog opens with evidence",
     "Keyboard Escape closes native dialog",
     "All 12 overlap clusters render with source evidence",
-    "Atomic needs catalogue renders all outcomes offline",
+    "Atomic needs catalogue renders all 1047 questions offline",
     "Needs desktop layout has no horizontal overflow",
-    "One need exposes its multiple content instances",
+    "An atomic need exposes conflicting York answers with verbatim quotes",
+    "Parent job drills through to every mapped York page",
     "Bidirectional need/content navigation works in native browser",
-    "Potential gaps are separate from claimed direct coverage",
+    "Gaps are separate from claimed coverage",
     "Filtered needs CSV downloads only the matching needs",
+    "Domain x coverage matrix filters to the selected cell",
+    "Table layout lists every atomic need without page overflow",
     "Live search filters in real browser",
     "Filtered CSV downloads with matching source content",
     "Mobile viewport has no page-level horizontal overflow",
@@ -31,6 +34,7 @@
     "inventory-mobile.png",
     "needs-desktop.png",
     "need-evidence-desktop.png",
+    "needs-matrix-desktop.png",
     "needs-mobile.png"
   ]
 }

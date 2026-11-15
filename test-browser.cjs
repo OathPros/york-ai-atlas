@@ -80,8 +80,8 @@ async function main() {
   await send('Network.emulateNetworkConditions',{offline:true,latency:0,downloadThroughput:0,uploadThroughput:0},session);
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false},session);
   await send('Page.navigate',{url:pathToFileURL(path.join(root,'York-AI-Atlas.html')).href},session);
-  for(let i=0;i<150;i++){if(await evaluate("document.querySelectorAll('#resource-list .resource-card').length===179"))break;await pause(100);}
-  await check('Standalone file renders all 179 resources with network offline',"document.querySelectorAll('#resource-list .resource-card').length===179");
+  for(let i=0;i<150;i++){if(await evaluate(`document.querySelectorAll('#resource-list .resource-card').length===${audit.records.length}`))break;await pause(100);}
+  await check(`Standalone file renders all ${audit.records.length} resources with network offline`,`document.querySelectorAll('#resource-list .resource-card').length===${audit.records.length}`);
   await check('Desktop viewport has no page-level horizontal overflow',"document.documentElement.scrollWidth<=innerWidth");
   await screenshot('inventory-desktop.png');
   await evaluate("document.querySelector('#resource-list [data-resource=\"students\"]').click()");
@@ -94,29 +94,43 @@ async function main() {
   await check(`All ${audit.findings.length} overlap clusters render with source evidence`,`document.querySelectorAll('#overlaps .cluster').length===${audit.findings.length} && document.querySelectorAll('#overlaps blockquote').length>10`);
   await screenshot('overlap-desktop.png');
   await evaluate("document.querySelector('.tabs [data-tab=\"needs\"]').click();document.querySelector('.tabs').scrollIntoView()");
-  await check('Atomic needs catalogue renders all outcomes offline',`document.querySelectorAll('#need-list .need-card').length===${audit.needs.length}`);
+  await check(`Atomic needs catalogue renders all ${audit.atomicNeeds.length} questions offline`,`document.querySelectorAll('#need-list details.atomic').length===${audit.atomicNeeds.length} && document.querySelectorAll('#need-list .job-group').length===${new Set(audit.atomicNeeds.map(n=>n.job)).size}`);
   await check('Needs desktop layout has no horizontal overflow',"document.documentElement.scrollWidth<=innerWidth");
   await screenshot('needs-desktop.png');
-  await evaluate("document.querySelector('#need-course-permission [data-need]').click()");
-  await check('One need exposes its multiple content instances',"document.querySelector('#need-course-permission .need-detail').open && document.querySelectorAll('#need-course-permission .need-mapping').length>1 && document.activeElement.id==='need-course-permission'");
+  await evaluate("document.querySelector('#need-permission-default-when-syllabus-silent summary').click();document.querySelector('#need-permission-default-when-syllabus-silent').scrollIntoView({behavior:'instant',block:'start'})");
+  await pause(150);
+  await check('An atomic need exposes conflicting York answers with verbatim quotes',"document.querySelector('#need-permission-default-when-syllabus-silent').open && document.querySelectorAll('#need-permission-default-when-syllabus-silent .need-mapping blockquote').length>1 && document.querySelector('#need-permission-default-when-syllabus-silent .callout.warning')");
   await screenshot('need-evidence-desktop.png');
-  await evaluate("document.querySelector('#need-course-permission [data-need-content]').click();document.querySelector('#resource-list [data-resource=\"students\"]').click();document.querySelector('#detail [data-need=\"need-course-permission\"]').click()");
+  await evaluate("document.querySelector('#job-need-course-permission [data-need-content]').click()");
   await pause(100);
-  await check('Bidirectional need/content navigation works in native browser',"!document.querySelector('#detail').open && !document.querySelector('#needs').hidden && document.activeElement.id==='need-course-permission'");
-  await evaluate("document.querySelector('#needsCoverage').value='Potential gap';document.querySelector('#needsCoverage').dispatchEvent(new Event('change',{bubbles:true}))");
-  await check('Potential gaps are separate from claimed direct coverage',`document.querySelectorAll('#need-list .need-card').length===${audit.needsMeta.coverageCounts['Potential gap']} && [...document.querySelectorAll('#need-list .need-counts strong')].every(e=>e.textContent==='0')`);
+  await check('Parent job drills through to every mapped York page',`!document.querySelector('#inventory').hidden && document.querySelector('#resource-need').value==='need-course-permission' && document.querySelectorAll('#resource-list .resource-card').length===${audit.records.filter(r=>r.jobIds.includes('need-course-permission')).length}`);
+  await evaluate("document.querySelector('#reset').click();document.querySelector('#resource-list [data-resource=\"students\"]').click();document.querySelector('#detail [data-need=\"permission-default-when-syllabus-silent\"]').click()");
+  await pause(100);
+  await check('Bidirectional need/content navigation works in native browser',"!document.querySelector('#detail').open && !document.querySelector('#needs').hidden && document.activeElement.closest('details')?.id==='need-permission-default-when-syllabus-silent'");
+  const gapCount=audit.atomicNeeds.filter(n=>n.coverage==="Gap: not found York-wide").length;
+  await evaluate("document.querySelector('#needsCoverage').value='Gap: not found York-wide';document.querySelector('#needsCoverage').dispatchEvent(new Event('change',{bubbles:true}))");
+  await check('Gaps are separate from claimed coverage',`document.querySelectorAll('#need-list details.atomic').length===${gapCount} && [...document.querySelectorAll('#need-list .count-pill')].every(e=>e.textContent==='no York page')`);
   await evaluate("document.querySelector('#export-needs').click()");
   const needsCsv=path.join(downloadPath,'york-ai-filtered-needs.csv');
   await waitForDownload(needsCsv);
   assert.ok(fs.existsSync(needsCsv),'Filtered needs CSV download');
   const needsText=fs.readFileSync(needsCsv,'utf8');
-  assert.ok(needsText.includes('Potential gap') && needsText.includes('need-human-review'));
-  assert.equal(needsText.trim().split(/\r?\n/).length,audit.needsMeta.coverageCounts['Potential gap']+1);
+  assert.ok(needsText.includes("Gap: not found York-wide") && !needsText.includes(',Answered,'));
+  assert.equal(needsText.trim().split(/\r?\n(?=(?:[^"]*"[^"]*")*[^"]*$)/).length,gapCount+1);
   checks.push('Filtered needs CSV downloads only the matching needs');
   fs.unlinkSync(needsCsv);
+  await evaluate("document.querySelector('#needs [data-needs-reset]').click();document.querySelector('.need-matrix').scrollIntoView({behavior:'instant'})");
+  const cell=await evaluate("[...document.querySelectorAll('[data-matrix]')].find(b=>b.dataset.matrix.endsWith('|Answered')).dataset.matrix");
+  const [cellDomain,cellCoverage]=cell.split('|');
+  await evaluate(`document.querySelector('[data-matrix="${cell}"]').click()`);
+  await check('Domain x coverage matrix filters to the selected cell',`document.querySelectorAll('#need-list details.atomic').length===${audit.atomicNeeds.filter(n=>n.domain===cellDomain&&n.coverage===cellCoverage).length} && location.hash.includes('needsDomain=${cellDomain}')`);
+  await screenshot('needs-matrix-desktop.png');
+  await evaluate("document.querySelector('#needs [data-needs-reset]').click();document.querySelector('[data-needs-layout=\"table\"]').click()");
+  await check('Table layout lists every atomic need without page overflow',`document.querySelectorAll('#need-list .need-table tbody tr').length===${audit.atomicNeeds.length} && document.documentElement.scrollWidth<=innerWidth`);
+  await evaluate("document.querySelector('[data-needs-layout=\"jobs\"]').click()");
   await evaluate("document.querySelector('#needs [data-needs-reset]').click()");
   await evaluate("document.querySelector('.tabs [data-tab=\"inventory\"]').click();document.querySelector('#reset').click();document.querySelector('#search').value='Copilot';document.querySelector('#search').dispatchEvent(new Event('input',{bubbles:true}))");
-  await check('Live search filters in real browser',"document.querySelectorAll('#resource-list .resource-card').length>0 && document.querySelectorAll('#resource-list .resource-card').length<179");
+  await check('Live search filters in real browser',`document.querySelectorAll('#resource-list .resource-card').length>0 && document.querySelectorAll('#resource-list .resource-card').length<${audit.records.length}`);
   await evaluate("document.querySelector('#export').click()");
   const csvFile=path.join(downloadPath,'york-ai-filtered-inventory.csv');
   await waitForDownload(csvFile);
@@ -130,8 +144,8 @@ async function main() {
   await pause(150);
   await check('Mobile viewport has no page-level horizontal overflow',"document.documentElement.scrollWidth<=innerWidth");
   await screenshot('inventory-mobile.png');
-  await evaluate("document.querySelector('.tabs [data-tab=\"needs\"]').click();document.querySelector('#need-human-review [data-need]').click();document.querySelector('#need-human-review').scrollIntoView({behavior:'instant',block:'start'})");
-  await check('Expanded need evidence fits the mobile viewport',"document.documentElement.scrollWidth<=innerWidth && document.querySelector('#need-human-review .need-detail').open");
+  await evaluate("document.querySelector('.tabs [data-tab=\"needs\"]').click();document.querySelector('#need-permission-default-when-syllabus-silent summary').click();document.querySelector('#need-permission-default-when-syllabus-silent').scrollIntoView({behavior:'instant',block:'start'})");
+  await check('Expanded need evidence fits the mobile viewport',"document.documentElement.scrollWidth<=innerWidth && document.querySelector('#need-permission-default-when-syllabus-silent').open && [...document.querySelectorAll('#need-permission-default-when-syllabus-silent *')].every(e=>e.getBoundingClientRect().right<=innerWidth+1)");
   await screenshot('needs-mobile.png');
   await evaluate("document.querySelector('.tabs [data-tab=\"blueprint\"]').click();document.querySelector('[data-blueprint=\"tools\"]').click()");
   await check('Proposed hub task links focus the correct section',"document.activeElement.id==='blueprint-tools'");
@@ -139,13 +153,13 @@ async function main() {
   await send('Page.navigate',{url:pathToFileURL(path.join(root,'York-AI-Atlas.html')).href+'#view=inventory&topic=Citation&resource=policy'},session);
   for(let i=0;i<100;i++){if(await evaluate("document.querySelector('#detail')?.open===true"))break;await pause(100);}
   await check('Shareable deep-link state restores filter and resource dialog',"document.querySelector('#topic').value==='Citation' && document.querySelector('#detail').open && document.querySelector('#detail-title').textContent.includes('Senate')");
-  await send('Page.navigate',{url:pathToFileURL(path.join(root,'York-AI-Atlas.html')).href+'#view=needs&need=need-human-review'},session);
+  await send('Page.navigate',{url:pathToFileURL(path.join(root,'York-AI-Atlas.html')).href+'#view=needs&need=permission-default-when-syllabus-silent'},session);
   await pause(150);
-  await check('Need deep link closes a resource modal and restores focused outcome',"!document.querySelector('#detail').open && !document.querySelector('#needs').hidden && document.querySelector('#need-human-review .need-detail').open && document.activeElement.id==='need-human-review'");
+  await check('Need deep link closes a resource modal and restores focused outcome',"!document.querySelector('#detail').open && !document.querySelector('#needs').hidden && document.querySelector('#need-permission-default-when-syllabus-silent').open && document.activeElement.closest('details')?.id==='need-permission-default-when-syllabus-silent'");
   assert.deepEqual(errors,[],'Browser runtime errors');
   assert.deepEqual(remoteRequests,[],'Dashboard attempted remote requests');
   checks.push('No runtime exceptions or remote page requests');
-  fs.writeFileSync(path.join(root,'browser-test-results.json'),JSON.stringify({checkedAt:new Date().toISOString(),browser:'Microsoft Edge (installed Chromium)',offline:true,checks,errors,remoteRequests,screenshots:['inventory-desktop.png','overlap-desktop.png','inventory-mobile.png','needs-desktop.png','need-evidence-desktop.png','needs-mobile.png']},null,2));
+  fs.writeFileSync(path.join(root,'browser-test-results.json'),JSON.stringify({checkedAt:new Date().toISOString(),browser:'Microsoft Edge (installed Chromium)',offline:true,checks,errors,remoteRequests,screenshots:['inventory-desktop.png','overlap-desktop.png','inventory-mobile.png','needs-desktop.png','need-evidence-desktop.png','needs-matrix-desktop.png','needs-mobile.png']},null,2));
   console.log(`All ${checks.length} real-browser checks passed.`);
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{

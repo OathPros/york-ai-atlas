@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "check": "node --check app.js && node --check needs.cjs && node --check build-data.cjs && node --check package-report.cjs && node --check build-site.cjs && node --check test-dashboard.cjs && node --check test-browser.cjs && node --check test-pages.cjs",
+    "check": "node --check app.js && node --check needs.cjs && node --check atomic.cjs && node --check collect.cjs && node --check collect-needs.cjs && node --check build-data.cjs && node --check package-report.cjs && node --check build-site.cjs && node --check test-dashboard.cjs && node --check test-browser.cjs && node --check test-pages.cjs",
     "build": "node build-data.cjs && node package-report.cjs && node build-site.cjs",
     "test": "node test-dashboard.cjs && node test-pages.cjs",
     "test:browser": "node test-browser.cjs"

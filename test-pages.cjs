@@ -45,7 +45,7 @@ async function main() {
     const errors = [];
     const virtualConsole = new VirtualConsole();
     virtualConsole.on('jsdomError', error => errors.push(error.message));
-    dom = await JSDOM.fromURL(base + '#view=needs&need=need-human-review', {
+    dom = await JSDOM.fromURL(base + '#view=needs&need=permission-default-when-syllabus-silent', {
       resources: 'usable',
       runScripts: 'dangerously',
       pretendToBeVisual: true,
@@ -62,11 +62,14 @@ async function main() {
     });
     const document = dom.window.document;
     assert.deepEqual(errors, [], 'Hosted page runtime errors');
-    assert.equal(document.querySelectorAll('#resource-list .resource-card').length, 179);
-    assert.equal(document.querySelectorAll('.need-card').length, 46);
+    const data = JSON.parse(fs.readFileSync(path.join(root, 'audit-data.json'), 'utf8'));
+    assert.equal(document.querySelectorAll('#resource-list .resource-card').length, data.records.length);
+    assert.equal(document.querySelectorAll('#need-list details.atomic').length, data.atomicNeeds.length);
+    assert.equal(document.querySelectorAll('#need-list .job-group').length, data.jobs.filter(j => j.needIds.length).length);
     assert.equal(document.getElementById('needs').hidden, false);
-    assert.ok(document.querySelector('#need-human-review .need-detail').open);
-    assert.equal(document.activeElement.id, 'need-human-review');
+    assert.ok(document.querySelector('#need-permission-default-when-syllabus-silent').open);
+    assert.ok(document.querySelector('#need-permission-default-when-syllabus-silent .callout.warning'));
+    assert.equal(document.activeElement.closest('details').id, 'need-permission-default-when-syllabus-silent');
     console.log('PASS Hosted assets initialise the complete atlas and restore need deep links');
     for (const element of document.querySelectorAll('a[href], link[href], script[src]')) {
       const raw = element.getAttribute('href') || element.getAttribute('src');

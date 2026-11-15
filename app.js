@@ -6,10 +6,12 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const byId = new Map(data.records.map(r => [r.id, r]));
   const byNeed = new Map(data.needs.map(n => [n.id, n]));
+  const byAtomic = new Map(data.atomicNeeds.map(n => [n.id, n]));
+  const byJob = new Map(data.jobs.map(j => [j.id, j]));
   const fields = ['audience','owner','domain','action','evidence','topic'];
-  const needFields = ['needsSearch','needsAudience','needsCategory','needsCoverage','needsBasis','needsMultiplicity','needsSort'];
+  const needFields = ['needsSearch','needsDomain','needsJob','needsAudience','needsCoverage','needsMultiplicity','needsOrigin','needsPriority','needsSort','needsLayout'];
   const defaults = { tab:'inventory', search:'', audience:'', owner:'', domain:'', action:'', evidence:'', topic:'', sort:'priority', table:false, resource:'',resourceNeed:'',need:'',
-    needsSearch:'',needsAudience:'',needsCategory:'',needsCoverage:'',needsBasis:'',needsMultiplicity:'',needsSort:'priority' };
+    needsSearch:'',needsDomain:'',needsJob:'',needsAudience:'',needsCoverage:'',needsMultiplicity:'',needsOrigin:'',needsPriority:'',needsSort:'priority',needsLayout:'jobs' };
   const state = { ...defaults };
   const hashFields = ['search',...fields,'sort','resource','resourceNeed','need',...needFields];
   const tabNames = ['inventory','needs','sitemap','overlaps','blueprint','method'];
@@ -29,7 +31,7 @@
   }
   function writeHash() {
     const p = new URLSearchParams({ view:state.tab });
-    for (const f of hashFields) if (state[f] && !(['sort','needsSort'].includes(f) && state[f] === 'priority')) p.set(f, state[f]);
+    for (const f of hashFields) if (state[f] && state[f] !== defaults[f]) p.set(f, state[f]);
     if (state.table) p.set('table','1');
     history.replaceState(null,'',`#${p}`);
   }
@@ -43,8 +45,8 @@
       if (state.domain && r.domain !== state.domain) return false;
       if (state.action && r.action !== state.action) return false;
       if (state.evidence && r.evidence !== state.evidence) return false;
-      if (state.resourceNeed && !r.needIds.includes(state.resourceNeed)) return false;
-      const haystack = [r.title,r.summary,r.addresses,r.url,r.finalUrl,r.owner,r.target,r.recommendation,...r.topics,...r.audience,...r.needIds.map(id=>byNeed.get(id).title)].join(' ').toLowerCase();
+      if (state.resourceNeed && !r.jobIds.includes(state.resourceNeed)) return false;
+      const haystack = [r.title,r.summary,r.addresses,r.url,r.finalUrl,r.owner,r.target,r.recommendation,...r.topics,...r.audience,...r.jobIds.map(id=>byJob.get(id).title)].join(' ').toLowerCase();
       return terms.every(t => haystack.includes(t));
     });
     return records.sort((a,b) => {
@@ -62,71 +64,110 @@
     $('view-toggle').textContent = state.table ? 'Card view' : 'Table view';
     $('view-toggle').setAttribute('aria-pressed',String(state.table));
   }
+  const covSlug = c => c.toLowerCase().replace(/[^a-z]+/g,'-').replace(/^-|-$/g,'');
+  const priorityLabels = ['P0 / risk if wrong or missing','P1 / high frequency or blocking','P2 / useful','P3 / nice to know'];
+  const originOrder = ['York content','York-wide search','Journey analysis','Peer benchmark','Peer scan (uncited)','Open question'];
   function filteredNeeds() {
     const terms=state.needsSearch.toLowerCase().trim().split(/\s+/).filter(Boolean);
-    return data.needs.filter(n=>{
+    const order=data.atomicCoverageOrder;
+    return data.atomicNeeds.filter(n=>{
+      if(state.needsDomain && n.domain!==state.needsDomain) return false;
+      if(state.needsJob && n.job!==state.needsJob) return false;
       if(state.needsAudience && !n.audience.includes(state.needsAudience)) return false;
-      if(state.needsCategory && n.category!==state.needsCategory) return false;
       if(state.needsCoverage && n.coverage!==state.needsCoverage) return false;
-      if(state.needsBasis && n.basis!==state.needsBasis) return false;
-      if(state.needsMultiplicity==='multiple' && n.directCount<2) return false;
+      if(state.needsOrigin && !n.origins.includes(state.needsOrigin)) return false;
+      if(state.needsPriority!=='' && n.priority!==Number(state.needsPriority)) return false;
       if(state.needsMultiplicity==='zero' && n.directCount!==0) return false;
-      const haystack=[n.id,n.title,n.statement,n.success,n.assessment,n.action,n.owner,n.category,...n.audience,...n.mappings.map(m=>byId.get(m.resourceId).title)].join(' ').toLowerCase();
+      if(state.needsMultiplicity==='one' && n.directCount!==1) return false;
+      if(state.needsMultiplicity==='multiple' && n.directCount<2) return false;
+      if(state.needsMultiplicity==='owners' && n.ownerCount<2) return false;
+      if(state.needsMultiplicity==='peer-only' && (n.contentCount || !n.peers.length)) return false;
+      if(!terms.length) return true;
+      const haystack=[n.id,n.question,n.statement,n.yorkAnswer,n.jobTitle,n.domainTitle,n.moment,n.conflictNote,...n.audience,...n.peers.map(p=>p.name),...n.mappings.map(m=>byId.get(m.resourceId).title)].join(' ').toLowerCase();
       return terms.every(t=>haystack.includes(t));
     }).sort((a,b)=>{
-      if(state.needsSort==='title') return a.title.localeCompare(b.title);
-      if(state.needsSort==='most') return b.directCount-a.directCount || a.title.localeCompare(b.title);
-      if(state.needsSort==='least') return a.directCount-b.directCount || a.title.localeCompare(b.title);
-      if(state.needsSort==='coverage') return data.needCoverageOrder.indexOf(a.coverage)-data.needCoverageOrder.indexOf(b.coverage) || a.title.localeCompare(b.title);
-      return a.priority-b.priority || data.needCoverageOrder.indexOf(a.coverage)-data.needCoverageOrder.indexOf(b.coverage) || a.title.localeCompare(b.title);
+      if(state.needsSort==='title') return a.question.localeCompare(b.question);
+      if(state.needsSort==='most') return b.directCount-a.directCount || b.ownerCount-a.ownerCount || a.question.localeCompare(b.question);
+      if(state.needsSort==='least') return a.directCount-b.directCount || a.priority-b.priority || a.question.localeCompare(b.question);
+      if(state.needsSort==='coverage') return order.indexOf(a.coverage)-order.indexOf(b.coverage) || a.priority-b.priority || a.question.localeCompare(b.question);
+      if(state.needsSort==='peers') return b.peers.length-a.peers.length || a.question.localeCompare(b.question);
+      return a.priority-b.priority || order.indexOf(a.coverage)-order.indexOf(b.coverage) || a.question.localeCompare(b.question);
     });
   }
   function syncNeedInputs() {
-    for(const f of needFields) $(f).value=state[f];
+    for(const f of needFields) if(f!=='needsLayout') $(f).value=state[f];
+    for(const b of document.querySelectorAll('[data-needs-layout]')) {const on=b.dataset.needsLayout===state.needsLayout;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));}
+  }
+  const coverageBadge = n => `<span class="cov cov-${covSlug(n.coverage)}">${esc(n.coverage)}</span>`;
+  const instanceText = n => n.directCount ? `${n.directCount} direct page${n.directCount===1?'':'s'}${n.ownerCount>1?` / ${n.ownerCount} publishers`:''}` : n.contentCount ? `${n.contentCount} partial page${n.contentCount===1?'':'s'}` : 'no York page';
+  function needSummary(n) {
+    return `<summary><span class="atomic-q">${esc(n.question)}</span><span class="atomic-meta">${coverageBadge(n)}<span class="count-pill" title="Distinct York resources giving a direct answer">${esc(instanceText(n))}</span><span class="prio prio-${n.priority}" title="${esc(priorityLabels[n.priority])}">P${n.priority}</span></span></summary>`;
+  }
+  function needBody(n) {
+    const evidence=n.mappings.map(m=>{const r=byId.get(m.resourceId);return `<div class="need-mapping"><div><span class="tag">${esc(m.role)}</span><span class="tag subtle">${esc(r.owner)}</span></div>${detailButton(r.id)}${m.gist?`<p>${esc(m.gist)}</p>`:''}${m.quotes.map(q=>`<blockquote>${esc(q)}</blockquote>`).join('')}<p class="muted">${link(r,'Open original source')} / found by ${esc(m.origins.join(' + ').toLowerCase())}</p></div>`;}).join('');
+    const raised=n.raised.length?`<h4>York pages that raise this question without answering it (${n.raised.length})</h4>${n.raised.map(x=>`<div class="need-mapping">${detailButton(x.resourceId)}<p>${esc(x.gist)}</p></div>`).join('')}`:'';
+    const search=n.search?`<div class="callout ${n.search.status==='Not found'?'warning':''}"><h4>York-wide web search: ${esc(n.search.status)}</h4>${n.search.note?`<p>${esc(n.search.note)}</p>`:''}${n.search.queries.length?`<p class="muted">Queries included: ${n.search.queries.map(q=>`<code>${esc(q)}</code>`).join(' ')}</p>`:''}<p class="muted">A bounded search, not proof that York has no answer anywhere (e.g., intranet, eClass, course outlines).</p></div>`:'';
+    const peers=n.peers.length?`<h4>Peer universities answering this question (${n.peers.length})</h4><ul class="peer-list">${n.peers.map(p=>`<li><strong>${esc(p.name)}</strong>${p.gist?` &mdash; ${esc(p.gist)}`:''}${p.url?` <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">source <span aria-hidden="true">&nearr;</span></a>`:''}</li>`).join('')}</ul><p class="muted">Demand evidence only: peers' answers are not York policy.</p>`:'';
+    return `<p class="need-statement">${esc(n.statement)}</p>
+      <div class="detail-meta compact"><div><strong>PARENT JOB</strong><button class="source-link" data-need="${esc(n.job)}">${esc(n.jobTitle)}</button></div><div><strong>DOMAIN</strong>${esc(n.domainTitle)}</div><div><strong>AUDIENCE</strong>${esc(n.audience.join(', '))}</div><div><strong>MOMENT</strong>${esc(n.moment||'Not specified')}</div><div><strong>PRIORITY</strong>${esc(priorityLabels[n.priority])}</div><div><strong>NEED EVIDENCE</strong>${esc(n.origins.join(', '))}</div></div>
+      <h4>What York currently says</h4><p>${esc(n.yorkAnswer)}</p>
+      ${n.conflict?`<div class="callout warning"><h4>Conflicting York answers</h4><p>${esc(n.conflictNote)}</p></div>`:''}
+      ${n.mappings.length?`<h4>York content answering this (${n.directCount} direct / ${n.contentCount-n.directCount} partial or signpost)</h4>${evidence}`:''}
+      ${raised}${search}${peers}
+      <h4>Proposed home</h4><p>${esc(n.proposedHome)}</p>
+      <p class="muted">${esc(n.validation)}. Every quote above was matched verbatim against captured page text.</p>
+      <div class="need-actions"><button class="text-button" data-copy-need="${esc(n.id)}">Copy link to this need</button><span class="muted">ID: ${esc(n.id)}</span></div>`;
   }
   function renderNeedResults() {
     const needs=filteredNeeds();
-    $('need-result-count').textContent=`${needs.length} of ${data.needs.length} atomic needs / ${needs.reduce((sum,n)=>sum+n.mappings.length,0)} content relationships`;
-    $('need-list').innerHTML=needs.length ? needs.map(n=>`
-      <article class="need-card ${n.coverage==='Potential gap'?'gap':n.coverage==='Conflicting answers'?'conflict':''}" id="${esc(n.id)}" tabindex="-1">
-        <div class="card-top"><span>${esc(n.id)} / ${esc(n.category)}</span><span class="need-status">${esc(n.coverage)}</span></div>
-        <h3><button data-need="${esc(n.id)}">${esc(n.title)}</button></h3>
-        <p class="need-statement">${esc(n.statement)}</p>
-        <div class="card-tags">${n.audience.map(a=>`<span class="tag">${esc(a)}</span>`).join('')}<span class="tag">${esc(n.basis)}</span></div>
-        <p class="need-assessment">${esc(n.assessment)}</p>
-        <div class="need-counts"><strong>${n.directCount}</strong> current direct answer instances <span>/ ${n.contentCount-n.directCount} context, signpost, historical or unverified links</span></div>
-        <details class="need-detail"><summary>Evidence, content instances & proposed response</summary>
-          <h4>Success condition (proposed)</h4><p>${esc(n.success)}</p>
-          <h4>Content mapped to this one need</h4>
-          ${n.mappings.map(m=>{const r=byId.get(m.resourceId);return `<div class="need-mapping"><span class="tag">${esc(m.role)}</span>${detailButton(r.id)}<p>${esc(m.rationale)}</p>${m.quote?`<blockquote>${esc(m.quote)}</blockquote>`:''}<p>${link(r,'Open original source')} / ${esc(r.evidence)}</p></div>`;}).join('')}
-          <h4>Proposed canonical answer/home</h4><p>${esc(n.proposedHome)}</p>
-          <h4>Proposed accountable group</h4><p>${esc(n.owner)}</p>
-          <h4>Consolidation or gap response</h4><p>${esc(n.action)}</p>
-          ${n.gapSearch?`<div class="callout warning"><h4>Bounded gap-search record</h4><p>No direct answer identified in these ${n.gapSearch.scopeIds.length} selected captured sources; this is not a York-wide absence claim.</p><p>${esc(n.gapSearch.limitation)}</p><p>Literal term hits (not proof of coverage): ${n.gapSearch.results.map(r=>`${esc(r.term)}: ${r.resourceIds.length} sources`).join('; ')}.</p><details><summary>Sources checked</summary>${n.gapSearch.scopeIds.map(id=>detailButton(id)).join('')}</details></div>`:''}
-          <p class="muted">${esc(n.validation)}. Content presence does not establish that users can successfully complete the task.</p>
-        </details>
-        <div class="need-actions"><button class="text-button" data-need-content="${esc(n.id)}">View all ${n.contentCount} mapped resources &rarr;</button><button class="text-button" data-need="${esc(n.id)}">Open / link to need</button></div>
-      </article>`).join('') : '<div class="empty"><h3>No matching needs</h3><p>Try fewer filters. Unmapped content is not classified as an unmet need.</p><button class="button secondary" data-needs-reset>Clear need filters</button></div>';
+    const jobCount=new Set(needs.map(n=>n.job)).size;
+    $('need-result-count').textContent=`${needs.length} of ${data.atomicNeeds.length} atomic needs / ${jobCount} parent jobs / ${needs.filter(n=>n.directCount>1).length} answered in more than one place`;
+    if(!needs.length) {$('need-list').innerHTML='<div class="empty"><h3>No matching needs</h3><p>Try fewer filters.</p><button class="button secondary" data-needs-reset>Clear need filters</button></div>';return;}
+    if(state.needsLayout==='table') {
+      $('need-list').innerHTML=`<div class="table-wrap"><table class="need-table"><thead><tr><th>ATOMIC QUESTION</th><th>PARENT JOB / DOMAIN</th><th>AUDIENCE</th><th>COVERAGE</th><th>DIRECT PAGES</th><th>PRIORITY</th></tr></thead><tbody>${needs.map(n=>`<tr><td><button data-need="${esc(n.id)}">${esc(n.question)}</button><small>${esc(n.origins.join(', '))}</small></td><td>${esc(n.jobTitle)}<small>${esc(n.domainTitle)}</small></td><td>${esc(n.audience.join(', '))}</td><td>${coverageBadge(n)}</td><td>${n.directCount}${n.ownerCount>1?`<small>${n.ownerCount} publishers</small>`:''}</td><td>P${n.priority}</td></tr>`).join('')}</tbody></table></div>`;
+      return;
+    }
+    const groups=new Map();
+    for(const n of needs) {if(!groups.has(n.job)) groups.set(n.job,[]);groups.get(n.job).push(n);}
+    $('need-list').innerHTML=[...groups].map(([jobId,list])=>{
+      const j=byJob.get(jobId);
+      const counts=data.atomicCoverageOrder.map(c=>[c,list.filter(n=>n.coverage===c).length]).filter(([,k])=>k);
+      return `<section class="job-group" id="job-${esc(jobId)}" tabindex="-1"><header><div><p class="eyebrow">PARENT JOB / ${esc(data.needDomains.find(d=>d.id===j.domain).title)}</p><h3>${esc(j.title)}</h3>${j.statement?`<p>${esc(j.statement)}</p>`:''}</div><div class="job-bar" role="img" aria-label="${esc(counts.map(([c,k])=>`${k} ${c}`).join(', '))}">${counts.map(([c,k])=>`<span class="cov-${covSlug(c)}" style="flex:${k}" title="${esc(`${k} ${c}`)}"></span>`).join('')}</div><p class="job-counts">${list.length}${list.length!==j.needIds.length?` of ${j.needIds.length}`:''} atomic questions: ${counts.map(([c,k])=>`${k} ${esc(c.toLowerCase())}`).join(' / ')}</p>${j.legacyCoverage?`<p class="muted">v1 job-level assessment: ${esc(j.legacyCoverage)}. ${esc(j.action)}</p>`:''}${data.records.some(r=>r.jobIds.includes(jobId))?`<button class="text-button" data-need-content="${esc(jobId)}">Show every York page mapped to this job in the inventory &rarr;</button>`:''}</header><ol class="atomic-list">${list.map(n=>`<li><details class="atomic" id="need-${esc(n.id)}" data-need-id="${esc(n.id)}">${needSummary(n)}<div class="atomic-body"></div></details></li>`).join('')}</ol></section>`;
+    }).join('');
+  }
+  function renderNeedMatrix() {
+    const order=data.atomicCoverageOrder.filter(c=>data.atomicMeta.coverageCounts[c]);
+    return `<div class="table-wrap matrix-wrap"><table class="need-matrix"><caption>Atomic needs by domain and current York coverage. Select a count to filter.</caption><thead><tr><th scope="col">DOMAIN</th>${order.map(c=>`<th scope="col"><span class="cov cov-${covSlug(c)}">${esc(c)}</span></th>`).join('')}<th scope="col">TOTAL</th><th scope="col">2+ PAGES</th></tr></thead><tbody>${data.needDomains.map(d=>{const list=data.atomicNeeds.filter(n=>n.domain===d.id);if(!list.length) return '';return `<tr><th scope="row"><button data-matrix="${esc(d.id)}|" title="${esc(d.description)}">${esc(d.title)}</button></th>${order.map(c=>{const k=list.filter(n=>n.coverage===c).length;return `<td>${k?`<button data-matrix="${esc(d.id)}|${esc(c)}" aria-label="${k} ${esc(c)} in ${esc(d.title)}">${k}</button>`:'<span aria-hidden="true">&middot;</span>'}</td>`;}).join('')}<td><strong>${list.length}</strong></td><td>${list.filter(n=>n.directCount>1).length}</td></tr>`;}).join('')}</tbody></table></div>`;
   }
   function renderNeeds() {
-    const options=(values)=>values.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
-    const m=data.needsMeta;
-    $('needs').innerHTML=`<div class="section-head"><div><p class="eyebrow">START WITH THE PROBLEM, NOT THE PAGE</p><h2>Catalogue of need</h2><p>One atomic user outcome can be served by many pieces of content; one piece of content can serve many needs. These are analyst-inferred needs, not validated user-research findings.</p></div><button id="export-needs" class="button secondary">Export filtered needs CSV &darr;</button></div>
-      <div class="need-metrics">${[[m.total,'atomic needs'],[m.multipleDirect,'with multiple direct answers'],[m.coverageCounts['Potential gap'],'potential gaps'],[m.coverageCounts['Conflicting answers'],'conflicting answers'],[m.mappings,'need-to-content mappings']].map(([count,label])=>`<div><strong>${count}</strong><span>${esc(label)}</span></div>`).join('')}</div>
-      <div class="callout"><strong>Coverage is a judgement, not a page count.</strong> "Addressed" means a current answer was identified in reviewed content, not that it is complete, approved or usability-tested. Multiple instances may be useful contextual or format variants, not redundant copies. A potential gap means no direct answer was identified in the stated reviewed scope, not that York has no such service or process.</div>
+    const options=(values,labels)=>values.map((v,i)=>`<option value="${esc(v)}">${esc(labels?labels[i]:v)}</option>`).join('');
+    const m=data.atomicMeta,c=m.coverageCounts;
+    const jobs=[...data.jobs].sort((a,b)=>a.title.localeCompare(b.title));
+    $('needs').innerHTML=`<div class="section-head"><div><p class="eyebrow">START WITH THE QUESTION, NOT THE PAGE</p><h2>Catalogue of need</h2><p>${m.total} specific, atomic questions people bring to York about AI, grouped under ${m.jobs} parent jobs. Each is traced to the York pages that answer it (with verbatim quotes), the York pages that raise it without answering, a York-wide search record, and peer universities that answer it for their own users.</p></div><button id="export-needs" class="button secondary">Export filtered needs CSV &darr;</button></div>
+      <div class="need-metrics">${[[m.total,'atomic needs'],[c['Answered']+c['Conflicting answers'],'answered somewhere at York'],[m.multipleDirect,'answered on 2+ York pages'],[m.multipleOwners,'answered by 2+ publishers'],[c['Conflicting answers'],'conflicting York answers'],[c['Partially answered'],'partially answered'],[c['Gap: not found York-wide']+c['Gap: not in captured content'],'gaps (no York answer found)']].map(([count,label])=>`<div><strong>${count}</strong><span>${esc(label)}</span></div>`).join('')}</div>
+      <details class="matrix-panel" open><summary>Where the answers live and where they don't: domain &times; coverage</summary>${renderNeedMatrix()}</details>
+      <div class="callout"><strong>How to read coverage.</strong> <em>Answered</em>: at least one York page gives a direct answer (quoted). <em>2+ pages</em> signals duplication to consolidate, not necessarily error. <em>Partially answered</em>: York gives context or a signpost only. <em>Gap: not found York-wide</em>: no answer in captured content and a York-wide web search also found none. <em>Gap: not in captured content</em>: demand is evidenced (peer benchmarks, journey analysis or a York page raising the question) but no York answer was found in the ${data.meta.inventoryRecords} captured resources; this is not a York-wide absence claim. <em>Unverified answer</em>: a search reported a York answer that could not be quoted from captured text.</div>
       <div class="workspace"><aside class="filters" aria-label="Need filters">
-        <label for="needsSearch">Search user outcomes</label><input id="needsSearch" type="search" placeholder="Try: permission, disclose, harm...">
-        <label for="needsAudience">Audience</label><select id="needsAudience"><option value="">All audiences</option>${options(unique(data.needs.flatMap(n=>n.audience)))}</select>
-        <label for="needsCategory">Need category</label><select id="needsCategory"><option value="">All categories</option>${options(unique(data.needs.map(n=>n.category)))}</select>
-        <label for="needsCoverage">Coverage assessment</label><select id="needsCoverage"><option value="">All coverage assessments</option>${options(data.needCoverageOrder)}</select>
-        <label for="needsMultiplicity">Current direct answer instances</label><select id="needsMultiplicity"><option value="">Any number</option><option value="multiple">Two or more instances</option><option value="zero">No direct answer identified</option></select>
-        <label for="needsBasis">Need evidence basis</label><select id="needsBasis"><option value="">All need hypotheses</option>${options(unique(data.needs.map(n=>n.basis)))}</select>
+        <label for="needsSearch">Search questions</label><input id="needsSearch" type="search" placeholder="Try: Copilot cost, thesis, cite, deadline...">
+        <label for="needsDomain">Domain</label><select id="needsDomain"><option value="">All domains</option>${options(data.needDomains.filter(d=>data.atomicNeeds.some(n=>n.domain===d.id)).map(d=>d.id),data.needDomains.filter(d=>data.atomicNeeds.some(n=>n.domain===d.id)).map(d=>d.title))}</select>
+        <label for="needsJob">Parent job</label><select id="needsJob"><option value="">All parent jobs</option>${options(jobs.map(j=>j.id),jobs.map(j=>`${j.title} (${j.needIds.length})`))}</select>
+        <label for="needsAudience">Audience</label><select id="needsAudience"><option value="">All audiences</option>${options(unique(data.atomicNeeds.flatMap(n=>n.audience)))}</select>
+        <label for="needsCoverage">Coverage</label><select id="needsCoverage"><option value="">All coverage</option>${options(data.atomicCoverageOrder.filter(c=>data.atomicMeta.coverageCounts[c]))}</select>
+        <label for="needsMultiplicity">Where the answer lives</label><select id="needsMultiplicity"><option value="">Any</option><option value="multiple">2+ York pages answer it</option><option value="owners">2+ publishers answer it</option><option value="one">Exactly one York page</option><option value="zero">No direct York answer</option><option value="peer-only">Peers answer it; York content doesn't</option></select>
+        <label for="needsOrigin">Need evidence</label><select id="needsOrigin"><option value="">Any source of evidence</option>${options(originOrder)}</select>
+        <label for="needsPriority">Priority</label><select id="needsPriority"><option value="">All priorities</option>${options(['0','1','2','3'],priorityLabels)}</select>
         <button class="text-button" data-needs-reset>Clear need filters</button>
-        <div class="filter-note"><strong>Need &ne; content topic.</strong><p>"AI policy" is a topic. "Know whether I may use AI for this assessment" is a need with a testable user outcome.</p><p>${m.mappedResources} resource records are mapped; ${m.unmappedResources} are not yet mapped. Unmapped does not mean irrelevant, unnecessary or unmet.</p><a href="need-content-map.csv" download>Export full relationship map</a></div>
-      </aside><div class="results"><div class="results-bar"><span id="need-result-count" role="status" aria-live="polite"></span><div><label for="needsSort" class="sr-only">Sort needs</label><select id="needsSort"><option value="priority">Priority: highest first</option><option value="coverage">Coverage assessment</option><option value="title">Need: A to Z</option><option value="most">Most direct answer instances</option><option value="least">Fewest direct answer instances</option></select></div></div><div id="need-list" class="need-grid"></div></div></div>`;
-    for(const f of needFields) $(f).addEventListener(f==='needsSearch'?'input':'change',()=>{
+        <div class="filter-note"><strong>Atomic = one question, one answer.</strong><p>"Can I use Copilot?" and "Is Copilot free for staff?" are separate needs because one answer does not satisfy both.</p><p>${m.mappedResources} of ${data.meta.inventoryRecords} resources answer at least one need. <a href="atomic-needs.csv" download>All needs CSV</a> / <a href="atomic-need-content-map.csv" download>Need-to-content map</a> / <a href="peer-evidence.csv" download>Peer evidence</a></p></div>
+      </aside><div class="results"><div class="results-bar"><span id="need-result-count" role="status" aria-live="polite"></span><div class="results-tools"><div class="segmented" role="group" aria-label="Needs layout"><button data-needs-layout="jobs">By parent job</button><button data-needs-layout="table">Table</button></div><label for="needsSort" class="sr-only">Sort needs</label><select id="needsSort"><option value="priority">Priority, then coverage</option><option value="coverage">Coverage: gaps & conflicts first</option><option value="most">Most York pages answering</option><option value="least">Fewest York pages answering</option><option value="peers">Most peer universities</option><option value="title">Question: A to Z</option></select></div></div><div id="need-list"></div></div></div>`;
+    for(const f of needFields.filter(f=>f!=='needsLayout')) $(f).addEventListener(f==='needsSearch'?'input':'change',()=>{
       state[f]=$(f).value;state.need='';renderNeedResults();writeHash();
     });
+    $('need-list').addEventListener('toggle',e=>{
+      const d=e.target;
+      if(!d.classList?.contains('atomic') || !d.open) return;
+      const body=d.querySelector('.atomic-body');
+      if(!body.childElementCount) body.innerHTML=needBody(byAtomic.get(d.dataset.needId));
+    },true);
     $('export-needs').addEventListener('click',downloadNeedsCsv);
     syncNeedInputs();renderNeedResults();
   }
@@ -135,16 +176,20 @@
     state.need='';syncNeedInputs();renderNeedResults();writeHash();
   }
   function focusNeed(id) {
-    const card=$(id);
-    if(!card) return;
-    card.querySelector('.need-detail').open=true;
-    card.scrollIntoView({behavior:'smooth',block:'start'});card.focus({preventScroll:true});
+    if(byJob.has(id)) {const g=$('job-'+id);if(g){g.scrollIntoView({behavior:'smooth',block:'start'});g.focus({preventScroll:true});}return;}
+    const d=$('need-'+id);
+    if(!d) return;
+    d.open=true;
+    const body=d.querySelector('.atomic-body');
+    if(!body.childElementCount) body.innerHTML=needBody(byAtomic.get(id));
+    d.scrollIntoView({behavior:'smooth',block:'start'});d.querySelector('summary').focus({preventScroll:true});
   }
   function openNeed(id) {
-    if(!byNeed.has(id)) return;
+    if(!byAtomic.has(id) && !byJob.has(id)) return;
     if($('detail').open) closeDetail();
     state.resource='';
     for(const f of needFields) state[f]=defaults[f];
+    if(byJob.has(id)) state.needsJob=id;
     state.need=id;syncNeedInputs();renderNeedResults();showTab('needs');focusNeed(id);
   }
   function renderInventory() {
@@ -210,8 +255,8 @@
       <article class="method-card"><h3>Failure and interpretation limits</h3><p>HTTP 404 means the tested URL returned not found; HTTP 500 is a server response, not proof of restricted access. Transport failure may be specific to this network/tool. Password-protected and generic replacement pages are not treated as verified destination content.</p><p>No sign-in, passwords, private systems, analytics, embedded videos, JavaScript-only interactions or tool configurations were inspected. Visual permission states were not inferred from plain text. External funder/vendor/publisher pages were not audited. This is a content audit, not a policy ruling, technical security review or legal opinion.</p></article>
       <article class="method-card"><h3>What counts as duplication?</h3><p>Findings identify overlapping answers, inconsistent interpretations, outdated versions, repeated navigation, marketing surfaces and alternate formats separately. These do not all warrant deletion.</p><p>Exact-text matches are SHA-256 matches of whitespace-normalised extracted body/PDF text, not binary equality or proof of identical legal status. Same-final-URL aliases are grouped separately. No inferred percentage of redundant content or maintenance savings is presented.</p></article>
       <article class="method-card"><h3>How to finish the institution-wide audit</h3><p>Obtain CMS URL exports/sitemaps and analytics from York web owners, add all Faculties/campuses and French counterparts, confirm protected-content inventories with owners, triage the backlog and validate the proposed owner/canonical mapping.</p><p>Run task-based usability sessions with students, instructors, researchers and staff. Complete accessibility testing and content sign-off before production. This dashboard is a local decision aid, not a deployed replacement for York's live site.</p></article>
-      <article class="method-card"><h3>Atomic needs and coverage judgements</h3><p>The needs catalogue separates the user outcome from its current content implementation. Mappings distinguish current direct answers, supporting context, signposts, historical guidance and unverified destinations. Direct-answer counts are grouped resource records, not independent policy authorities or a redundancy score.</p><p>Needs were inferred from captured content or proposed as explicit hypotheses; none has been validated through user research. Potential gaps include the selected search scope, literal term hits and limitations. Unverified destinations, missing translations and unmapped content are not automatically gaps. The catalogue reuses the original public-web snapshot; adding it did not perform a new institutional crawl.</p></article>
-      <article class="method-card wide"><h3>Files and reusable data</h3><div class="downloads"><a href="inventory.csv" download>Full inventory CSV</a><a href="needs-catalogue.csv" download>Catalogue of need CSV</a><a href="need-content-map.csv" download>Need-to-content relationship CSV</a><a href="discovery-backlog.csv" download>Unretrieved discovery backlog CSV</a><a href="audit-data.json" download>Structured audit JSON</a><a href="sources.json" download>Raw HTML extraction evidence JSON</a><a href="pdf-evidence.json" download>PDF extraction evidence JSON</a><a href="supplemental-evidence.json" download>Alternate-fetch evidence</a><a href="briefing.html">Printable executive briefing</a></div><p style="margin-top:16px">Open index.html locally; no server or installation is required. The dashboard reads its packaged data.js and makes no network requests. External source links require an internet connection. Collection scripts are included for repeatability and require local Node + jsdom, and Python + pypdf for PDF extraction. Re-running the collector overwrites sources.json; preserve dated snapshots before refreshing.</p></article>
+      <article class="method-card wide"><h3>How the catalogue of need was built</h3><p><strong>1. Mine.</strong> Every captured York resource with usable text (${data.atomicMeta.method.corpusResources}) was read in full to extract each specific question it answers, and each question it raises but leaves unanswered, with a verbatim quote. <strong>2. Benchmark demand.</strong> Public AI hubs at Canadian and international peer universities were scanned for the questions they answer for their own users (${data.atomicMeta.method.peer} peer items). <strong>3. Walk journeys.</strong> Student, instructor, researcher, staff, applicant and partner journeys were walked moment by moment to generate questions (${data.atomicMeta.method.journey}), then checked with York-wide web searches beyond the captured AI pages. Newly found York pages were captured (${m.needsSearchPages}) and added to the inventory.</p><p><strong>4. Synthesise.</strong> ${data.atomicMeta.method.pool} candidate items were clustered in ${data.atomicMeta.method.synthesisBatches} batches into atomic questions: one question, one answer, one audience moment. Near-identical questions were merged; ${data.atomicMeta.method.excluded} trivia or non-questions were excluded. <strong>5. Compute.</strong> Coverage, duplication counts and publisher counts are computed by the build from the evidence, not hand-labelled. The build fails if any quote is not found verbatim in captured text or any URL is not in the inventory.</p><p><strong>Limits.</strong> Needs are analyst-synthesised, not validated through user research. "Answered" means a York page directly answers the question, not that the answer is complete, current or approved. 2+ answering pages flag consolidation candidates; repetition is not automatically redundant. Gaps are bounded-search hypotheses. Peer evidence shows demand only. York-wide search quotes that could not be matched to captured text were dropped.</p></article>
+      <article class="method-card wide"><h3>Files and reusable data</h3><div class="downloads"><a href="inventory.csv" download>Full inventory CSV</a><a href="atomic-needs.csv" download>Atomic needs CSV</a><a href="atomic-need-content-map.csv" download>Atomic need-to-content map CSV</a><a href="need-jobs.csv" download>Parent jobs CSV</a><a href="peer-evidence.csv" download>Peer-university demand evidence CSV</a><a href="atomic-needs.json" download>Atomic needs source JSON</a><a href="needs-sources.json" download>York-wide search page captures JSON</a><a href="needs-catalogue.csv" download>v1 job-level catalogue CSV</a><a href="need-content-map.csv" download>v1 need-to-content map CSV</a><a href="discovery-backlog.csv" download>Unretrieved discovery backlog CSV</a><a href="audit-data.json" download>Structured audit JSON</a><a href="sources.json" download>Raw HTML extraction evidence JSON</a><a href="pdf-evidence.json" download>PDF extraction evidence JSON</a><a href="supplemental-evidence.json" download>Alternate-fetch evidence</a><a href="briefing.html">Printable executive briefing</a></div><p style="margin-top:16px">Open index.html locally; no server or installation is required. The dashboard reads its packaged data.js and makes no network requests. External source links require an internet connection. Collection scripts are included for repeatability and require local Node + jsdom, and Python + pypdf for PDF extraction. Re-running the collector overwrites sources.json; preserve dated snapshots before refreshing.</p></article>
       </div>
       <details class="map-family"><summary>Unretrieved discovery backlog <small>${m.unvisitedLeads} URLs</small></summary><div class="map-items">${data.unvisited.map(r=>`<div class="map-item"><div><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.text || r.url)}</a><small>Found on: ${esc(r.from)}</small></div></div>`).join('')}</div></details>
       <details class="map-family"><summary>Excluded endpoints <small>${m.excludedEndpoints} URLs</small></summary><div class="map-items">${data.excluded.map(r=>`<div class="map-item"><div><small>${esc(r.url)}</small><p>${esc(r.reason)}</p></div></div>`).join('')}</div></details>`;
@@ -253,8 +298,8 @@
         <h4>Retrieved source excerpt</h4>${quotes}
         <h4>Proposed future home</h4><p>${esc(r.target)}</p>
         <h4>Consolidation recommendation</h4><p>${esc(r.recommendation)}</p>${clusters}
-        <h4>Atomic user needs served by this content (${r.needIds.length})</h4>
-        ${r.needIds.length?r.needIds.map(id=>{const n=byNeed.get(id),m=n.mappings.find(m=>m.resourceId===r.id);return `<button class="source-link" data-need="${esc(id)}">${esc(n.title)}</button><p>${esc(m.role)} / ${esc(n.coverage)}. ${esc(m.rationale)}</p>`;}).join(''):'<p>Not yet mapped to a need. This is not a finding of no user need or no coverage.</p>'}
+        <h4>Atomic questions this content answers (${r.atomicIds.length})</h4>
+        ${r.atomicIds.length?['Direct answer','Supporting context','Signpost'].map(role=>{const list=r.atomicIds.map(id=>byAtomic.get(id)).filter(n=>n.mappings.find(m=>m.resourceId===r.id).role===role);return list.length?`<details class="detail-needs" ${role==='Direct answer'?'open':''}><summary>${esc(role)} (${list.length})</summary>${list.map(n=>`<button class="source-link" data-need="${esc(n.id)}">${esc(n.question)}</button><p class="muted">${esc(n.coverage)} / answered on ${n.directCount} York page${n.directCount===1?'':'s'}</p>`).join('')}</details>`:'';}).join(''):'<p>Not mapped to an atomic need. This is not a finding that the content is unnecessary.</p>'}
         ${relationships(r.inlinks,'Observed incoming links')}${relationships(r.outlinks,'Observed outgoing links')}
         <p style="margin-top:20px" class="muted">Only relationships among inventoried records are shown. A missing edge is not proof that no site link exists. ${esc(modified)}</p>
       </div>`;
@@ -291,8 +336,8 @@
     saveCsv('york-ai-filtered-inventory.csv',keys,filtered());
   }
   function downloadNeedsCsv() {
-    const keys=['id','title','statement','audience','category','success','coverage','basis','validation','assessment','directCount','contentCount','proposedHome','owner','action','priority','resourceIds','sourceUrls'];
-    const rows=filteredNeeds().map(n=>({...n,resourceIds:n.mappings.map(m=>m.resourceId),sourceUrls:n.mappings.map(m=>byId.get(m.resourceId).url)}));
+    const keys=['id','question','statement','jobTitle','domainTitle','audience','moment','priority','coverage','directCount','ownerCount','directOwners','yorkAnswer','conflictNote','origins','directUrls','otherUrls','raisedByUrls','searchStatus','peerInstitutions','proposedHome'];
+    const rows=filteredNeeds().map(n=>({...n,directUrls:n.mappings.filter(m=>m.role==='Direct answer').map(m=>byId.get(m.resourceId).url),otherUrls:n.mappings.filter(m=>m.role!=='Direct answer').map(m=>byId.get(m.resourceId).url),raisedByUrls:n.raised.map(x=>byId.get(x.resourceId).url),searchStatus:n.search?.status||'',peerInstitutions:n.peers.map(p=>p.name)}));
     saveCsv('york-ai-filtered-needs.csv',keys,rows);
   }
   function saveCsv(filename,keys,rows) {
@@ -315,7 +360,7 @@
     $('view-toggle').addEventListener('click',()=>{state.table=!state.table;syncInputs();renderInventory();writeHash();});
     $('reset').addEventListener('click',reset);
     $('export').addEventListener('click',downloadCsv);
-    $('resource-need').insertAdjacentHTML('beforeend',data.needs.map(n=>`<option value="${esc(n.id)}">${esc(n.title)}</option>`).join(''));
+    $('resource-need').insertAdjacentHTML('beforeend',[...data.jobs].sort((a,b)=>a.title.localeCompare(b.title)).map(j=>`<option value="${esc(j.id)}">${esc(j.title)}</option>`).join(''));
     $('resource-need').addEventListener('change',()=>{state.resourceNeed=$('resource-need').value;renderInventory();writeHash();});
     window.addEventListener('hashchange',()=>{
       readHash();syncInputs();syncNeedInputs();renderInventory();renderNeedResults();showTab(state.tab);
@@ -336,6 +381,9 @@
       if(button.hasAttribute('data-reset')) reset();
       if(button.hasAttribute('data-needs-reset')) resetNeeds();
       if(button.dataset.need) openNeed(button.dataset.need);
+      if(button.dataset.needsLayout) {state.needsLayout=button.dataset.needsLayout;state.need='';syncNeedInputs();renderNeedResults();writeHash();}
+      if(button.dataset.matrix!==undefined) {const [d,c]=button.dataset.matrix.split('|');for(const f of needFields) state[f]=defaults[f];state.needsDomain=d;state.needsCoverage=c;state.need='';syncNeedInputs();renderNeedResults();writeHash();$('need-result-count').scrollIntoView({behavior:'smooth',block:'start'});}
+      if(button.dataset.copyNeed) {const url=location.href.split('#')[0]+'#view=needs&need='+encodeURIComponent(button.dataset.copyNeed);(navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(()=>{button.textContent='Link copied';},()=>{button.textContent=url;});}
       if(button.dataset.needContent) {reset();state.resourceNeed=button.dataset.needContent;syncInputs();renderInventory();showTab('inventory');}
       if(button.dataset.finding) {closeDetail();showTab('overlaps');document.getElementById('finding-'+button.dataset.finding).scrollIntoView({behavior:'smooth',block:'start'});}
       if(button.dataset.blueprint) {const card=$('blueprint-'+button.dataset.blueprint);card.scrollIntoView({behavior:'smooth',block:'center'});card.focus({preventScroll:true});}

@@ -9,7 +9,9 @@ const files = [
   'index.html', 'styles.css', 'app.js', 'data.js', 'York-AI-Atlas.html',
   'briefing.html', 'inventory.csv', 'needs-catalogue.csv',
   'need-content-map.csv', 'discovery-backlog.csv', 'audit-data.json',
-  'sources.json', 'pdf-evidence.json', 'supplemental-evidence.json'
+  'sources.json', 'pdf-evidence.json', 'supplemental-evidence.json',
+  'atomic-needs.csv', 'atomic-need-content-map.csv', 'peer-evidence.csv',
+  'need-jobs.csv', 'atomic-needs.json', 'needs-sources.json'
 ];
 
 fs.mkdirSync(output, { recursive: true });
@@ -21,7 +23,7 @@ fs.writeFileSync(path.join(output, '.nojekyll'), '');
 const data = JSON.parse(fs.readFileSync(path.join(output, 'audit-data.json'), 'utf8'));
 const index = fs.readFileSync(path.join(output, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(output, 'styles.css'), 'utf8');
-assert.ok(data.records.length && data.needs.length, 'Missing atlas content');
+assert.ok(data.records.length && data.needs.length && data.atomicNeeds.length && data.jobs.length, 'Missing atlas content');
 assert.ok(css.includes('--york-red:#E31837'), 'Missing York red');
 assert.ok(!index.includes('brand-mark'), 'No logo or monogram should be published');
 for (const file of files) {

@@ -3,10 +3,25 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { rows, findings, blueprint } = require('./curation.cjs');
 const { buildNeeds, coverageOrder } = require('./needs.cjs');
+const { buildAtomic } = require('./atomic.cjs');
 const root = __dirname;
 const source = JSON.parse(fs.readFileSync(path.join(root, 'sources.json'), 'utf8'));
 const pdfs = JSON.parse(fs.readFileSync(path.join(root, 'pdf-evidence.json'), 'utf8'));
 const pdfByUrl = new Map(pdfs.map(p => [p.url, p]));
+// Pages found by the York-wide verification searches for the v2 catalogue of need.
+const needsSources = JSON.parse(fs.readFileSync(path.join(root, 'needs-sources.json'), 'utf8'));
+const atomicSource = JSON.parse(fs.readFileSync(path.join(root, 'atomic-needs.json'), 'utf8'));
+const needsTopics = [
+  [/syllabus-statements|academic-integrity-for-instructors/, ['Academic integrity','Teaching']],
+  [/career-ready|ai-for-your-career/, ['Careers','Training']],
+  [/eclass-tools|teachingcommons|teaching-commons-assists/, ['Teaching','Training']],
+  [/records-and-information|\/ipo\/|privacy|phishing|ctra|infosec\/ai-tools/, ['Data & privacy','Approved tools']],
+  [/student-services\/ai|ai-tools\/$|lthelp/, ['Approved tools']],
+  [/intellectual-property|commercialization|industry-partnerships/, ['Innovation & partnerships']],
+  [/media-contacts|cais|rise\/|seed-grants/, ['Research discovery']],
+  [/mmai/, ['Programs']]
+];
+const needsPages = needsSources.pages.map(p => ({ ...p, from: 'York-wide needs verification search', topicsHint: needsTopics.find(([re]) => re.test(p.url))?.[1] }));
 const normalizeText = s => (s || '').replace(/\s+/g, ' ').trim();
 function urlKey(raw) {
   const u = new URL(raw);
@@ -43,6 +58,11 @@ function publishingFamily(url) {
   if (p.includes('/research/')) return 'Research & Innovation';
   if (p.includes('/uit/')) return 'UIT';
   if (/futurestudents/.test(h)) return 'Graduate Admissions';
+  if (/events\.yorku/.test(h)) return 'Events calendar';
+  if (p.includes('/career-ready/')) return 'Career Centre';
+  if (p.includes('/unit/ipo/')) return 'Information & Privacy Office';
+  if (p.includes('/science/')) return 'Faculty of Science';
+  if (p.startsWith('/news/')) return 'YFile / Communications';
   if (p.includes('/yfile/')) return 'YFile / Communications';
   return 'Central AI hub';
 }
@@ -53,7 +73,7 @@ const supplemental = {
 };
 const excluded = [];
 const grouped = new Map();
-for (const raw of source.pages) {
+for (const raw of [...source.pages, ...needsPages]) {
   const p = { ...raw };
   if (/ezproxy|\/ezproxy\//i.test(p.url) || /registerOffering|forms\/view/i.test(p.url)) {
     excluded.push({ url: p.url, reason: /ezproxy/i.test(p.url) ? 'Externally authored proxied publication/login, outside York-authored content scope' : 'Transactional registration or form endpoint, not an AI information page', status: p.status || null });
@@ -82,7 +102,7 @@ for (const [groupKey, attempts] of grouped) {
   const isNews = /\/(?:yfile|news|20\d\d\/\d\d\/\d\d)\//.test(p.url);
   const pdfTraining = p.kind === 'PDF' && owner === 'Teaching Commons';
   const isFrench = new URL(p.url).searchParams.get('l') === 'fr';
-  let topics = c?.topics || (owner === 'Libraries' ? ['AI literacy','Research discovery'] : owner === 'Teaching Commons' ? ['Teaching','Training'] : /connected-minds/.test(p.url) ? ['Research discovery', /award|scholar|fellowship|funding|opportunit/.test(p.url) ? 'Funding' : 'Research impact'] : isNews ? ['News','Research impact'] : ['Research discovery']);
+  let topics = c?.topics || p.topicsHint || (owner === 'Libraries' ? ['AI literacy','Research discovery'] : owner === 'Teaching Commons' ? ['Teaching','Training'] : /connected-minds/.test(p.url) ? ['Research discovery', /award|scholar|fellowship|funding|opportunit/.test(p.url) ? 'Funding' : 'Research impact'] : isNews ? ['News','Research impact'] : ['Research discovery']);
   if (isFrench) topics = [...topics, 'French-language route'];
   const status = p.error ? (p.status === 404 ? 'HTTP 404' : p.status >= 400 ? `HTTP ${p.status}` : /Password|authentication/i.test(p.error) ? 'Protected destination' : /Wrong destination/i.test(p.error) ? 'Wrong destination' : 'Transport failure') : p.alternate ? 'Verified alternate fetch' : c ? 'Analyst-curated source' : 'Extracted / needs triage';
   const summary = c?.summary || (p.error ? `Retrieval did not establish the intended content: ${p.error}. Treat this as an unverified lead, not as confirmed guidance.` : `${pdfTraining ? 'Teaching development download. ' : isNews ? 'Dated news or editorial content. ' : ''}Extracted lead (not analyst-validated): ${normalizeText(p.description || p.text || title).slice(0, 285)}${normalizeText(p.description || p.text || title).length > 285 ? '...' : ''}`);
@@ -167,11 +187,13 @@ for (const n of needs) {
   n.proposedHome = 'AI @ York / '+section.title;
 }
 for (const r of records) r.needIds = needs.filter(n=>n.mappings.some(m=>m.resourceId===r.id)).map(n=>n.id);
-const unvisited = source.discovered.filter(l => !source.pages.some(p => urlKey(p.url) === urlKey(l.url))).map(l => ({ ...l, reason: 'Discovered but not retrieved within bounded crawl and targeted follow-up' }));
+const atomic = buildAtomic(atomicSource, records, texts, urlKey, needs, blueprint);
+const unvisited = source.discovered.filter(l => ![...source.pages, ...needsPages].some(p => urlKey(p.url) === urlKey(l.url))).map(l => ({ ...l, reason: 'Discovered but not retrieved within bounded crawl and targeted follow-up' }));
 const date = source.collectedAt.slice(0,10);
 const data = {
-  meta:{ title:'York AI Atlas', date, collectedAt:source.collectedAt, attemptedUrls:source.pages.length, inventoryRecords:records.length, curatedRecords:records.filter(r=>r.curated).length, extractedRecords:records.filter(r=>!r.curated).length, reachableRecords:records.filter(r=>r.excerpt).length, ownerFamilies:new Set(records.map(r=>r.owner)).size, hostnames:new Set(records.map(r=>r.domain)).size, criticalClusters:findings.filter(f=>f.severity==='Critical').length, observedEdges:edges.size, excludedEndpoints:excluded.length, unvisitedLeads:unvisited.length, pdfsExtracted:pdfs.filter(p=>p.text).length },
+  meta:{ title:'York AI Atlas', date, collectedAt:source.collectedAt, attemptedUrls:source.pages.length+needsPages.length, needsSearchPages:needsPages.length, inventoryRecords:records.length, curatedRecords:records.filter(r=>r.curated).length, extractedRecords:records.filter(r=>!r.curated).length, reachableRecords:records.filter(r=>r.excerpt).length, ownerFamilies:new Set(records.map(r=>r.owner)).size, hostnames:new Set(records.map(r=>r.domain)).size, criticalClusters:findings.filter(f=>f.severity==='Critical').length, observedEdges:edges.size, excludedEndpoints:excluded.length, unvisitedLeads:unvisited.length, pdfsExtracted:pdfs.filter(p=>p.text).length },
   records, findings, blueprint, needs, needCoverageOrder:coverageOrder,
+  atomicNeeds:atomic.needs, jobs:atomic.jobs, needDomains:atomic.domains, atomicCoverageOrder:atomic.coverageOrder, atomicMeta:atomic.meta,
   needsMeta:{
     analysedAt:new Date().toISOString(), total:needs.length,
     coverageCounts:Object.fromEntries(coverageOrder.map(status=>[status,needs.filter(n=>n.coverage===status).length])),
@@ -198,6 +220,18 @@ fs.writeFileSync(path.join(root,'needs-catalogue.csv'),'\ufeff'+[needFields.join
 const mappingFields=['need_id','need_title','coverage','resource_id','resource_title','url','role','rationale','evidence_status','quote'];
 const mappingRows=needs.flatMap(n=>n.mappings.map(m=>{const r=byId.get(m.resourceId);return [n.id,n.title,n.coverage,r.id,r.title,r.url,m.role,m.rationale,r.evidence,m.quote].map(csv).join(',');}));
 fs.writeFileSync(path.join(root,'need-content-map.csv'),'\ufeff'+[mappingFields.join(','),...mappingRows].join('\r\n'));
+const writeCsv=(file,fields,rows)=>fs.writeFileSync(path.join(root,file),'\ufeff'+[fields.join(','),...rows.map(r=>fields.map(k=>csv(r[k])).join(','))].join('\r\n'));
+const urlsFor=(n,pred)=>n.mappings.filter(pred).map(m=>byId.get(m.resourceId).url);
+writeCsv('atomic-needs.csv',['id','question','statement','job','jobTitle','domainTitle','audience','moment','priority','coverage','directCount','ownerCount','directOwners','contentCount','yorkAnswer','conflictNote','origins','directUrls','partialUrls','raisedByUrls','searchStatus','peerInstitutions','proposedHome','validation'],
+  atomic.needs.map(n=>({...n,directUrls:urlsFor(n,m=>m.role==='Direct answer'),partialUrls:urlsFor(n,m=>m.role!=='Direct answer'),raisedByUrls:n.raised.map(x=>byId.get(x.resourceId).url),searchStatus:n.search?.status||'',peerInstitutions:n.peers.map(p=>p.name)})));
+writeCsv('atomic-need-content-map.csv',['need_id','question','coverage','resource_id','resource_title','url','publisher','role','found_by','york_gist','verbatim_quote'],
+  atomic.needs.flatMap(n=>[...n.mappings.map(m=>{const r=byId.get(m.resourceId);return {need_id:n.id,question:n.question,coverage:n.coverage,resource_id:r.id,resource_title:r.title,url:r.url,publisher:r.owner,role:m.role,found_by:m.origins,york_gist:m.gist,verbatim_quote:m.quotes.join(' || ')};}),
+    ...n.raised.map(x=>{const r=byId.get(x.resourceId);return {need_id:n.id,question:n.question,coverage:n.coverage,resource_id:r.id,resource_title:r.title,url:r.url,publisher:r.owner,role:'Raises question without answering',found_by:'Content mining',york_gist:x.gist,verbatim_quote:''};})]));
+writeCsv('peer-evidence.csv',['need_id','question','york_coverage','institution','url','what_the_peer_answers'],
+  atomic.needs.flatMap(n=>n.peers.map(p=>({need_id:n.id,question:n.question,york_coverage:n.coverage,institution:p.name,url:p.url,what_the_peer_answers:p.gist}))));
+writeCsv('need-jobs.csv',['id','title','domain','origin','needCount','priority','answered','partial','conflicting','gapsYorkWide','gapsCaptured','unverified','legacyCoverage'],
+  atomic.jobs.map(j=>({...j,needCount:j.needIds.length,answered:j.coverageCounts['Answered'],partial:j.coverageCounts['Partially answered'],conflicting:j.coverageCounts['Conflicting answers'],gapsYorkWide:j.coverageCounts['Gap: not found York-wide'],gapsCaptured:j.coverageCounts['Gap: not in captured content'],unverified:j.coverageCounts['Unverified answer']})));
+console.log('Atomic needs:', JSON.stringify({...atomic.meta,method:undefined},null,1));
 console.log(JSON.stringify(data.meta,null,2));
 console.log('Needs catalogue:', JSON.stringify(data.needsMeta,null,2));
 console.log('Exact extracted-text groups:', exactDuplicates.map(g=>g.ids));
