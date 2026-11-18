@@ -138,6 +138,19 @@ w.eval(fs.readFileSync(path.join(root,'app.js'),'utf8'));
 function click(selector) {const el=d.querySelector(selector);assert.ok(el,`Missing element ${selector}`);el.click();}
 function input(id,value,type='change') {const e=d.getElementById(id);e.value=value;e.dispatchEvent(new w.Event(type,{bubbles:true}));}
 function cards() {return [...d.querySelectorAll('#resource-list .resource-card')];}
+test('Inventory opens without promotional copy, disclaimers or a hero',()=>{
+  assert.equal(d.querySelector('.hero, .scope-strip, .audit-label, #snapshot-date, #inventory .filter-note, footer'),null);
+  assert.equal(d.querySelector('h1').textContent,'YORK AI ATLAS');
+  assert.doesNotMatch(d.getElementById('inventory').textContent,/Filter by task|WHERE DOES THE INFORMATION LIVE/);
+  assert.ok(d.querySelectorAll('#metrics .metric').length>0);
+});
+test('Navigation, source and export arrows use a plain greater-than sign',()=>{
+  for(const selector of ['#export','#export-needs','[data-need-content]','[data-blueprint] span','[data-inventory-topic]','.pillar .eyebrow','.card-footer a span[aria-hidden]']) {
+    const elements=[...d.querySelectorAll(selector)];
+    assert.ok(elements.length,`Missing arrow controls: ${selector}`);
+    for(const element of elements) assert.ok(element.textContent.trim().endsWith('>'),selector);
+  }
+});
 test('Initial inventory and six-view navigation render without runtime errors',()=>{
   assert.equal(cards().length,data.records.length);
   for(const tab of ['inventory','needs','sitemap','overlaps','blueprint','method']) {

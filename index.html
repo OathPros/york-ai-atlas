@@ -10,11 +10,9 @@
 </head>
 <body>
   <header class="masthead">
-    <div class="topline"><span class="brand">YORK AI ATLAS</span><span class="audit-label">INDEPENDENT CONTENT AUDIT / NOT AN OFFICIAL YORK WEBSITE</span></div>
-    <div class="hero"><div><p class="eyebrow">MANY WEBSITES. ONE UNIVERSITY.</p><h1>A clearer home<br>for AI at York.</h1><p class="intro">Find the guidance. See the overlap. Design a single front door.<br>A source-linked map of York's public AI information landscape.</p></div><div class="hero-note"><span class="live-dot"></span> RESEARCH SNAPSHOT<span id="snapshot-date"></span><p>One destination.<br>Shared answers.<br>Accountable owners.</p></div></div>
+    <div class="topline"><h1 class="brand">YORK AI ATLAS</h1></div>
     <div id="metrics" class="metrics" aria-label="Audit statistics"></div>
   </header>
-  <div class="scope-strip"><strong>A bounded public-web audit, not a census.</strong> Page retrieval, analyst-reviewed evidence and unverified leads are distinguished. Recommendations are proposals, not York policy. <button data-tab="method">Scope & limitations &rarr;</button></div>
   <main>
     <nav class="tabs" aria-label="Audit views">
       <button data-tab="inventory" class="active" aria-current="page">01 <span>Resource inventory</span></button>
@@ -25,7 +23,7 @@
       <button data-tab="method">06 <span>Evidence & method</span></button>
     </nav>
     <section id="inventory" class="panel">
-      <div class="section-head"><div><p class="eyebrow">WHERE DOES THE INFORMATION LIVE?</p><h2>The resource inventory</h2><p>Filter by task, audience, site or recommended action. Open a resource for evidence and migration notes.</p></div><button id="export" class="button secondary">Export filtered CSV &darr;</button></div>
+      <div class="section-head"><h2>The resource inventory</h2><button id="export" class="button secondary">Export filtered CSV &gt;</button></div>
       <div class="workspace">
         <aside class="filters" aria-label="Resource filters">
           <label for="search">Search the landscape</label><input id="search" type="search" placeholder="Try: citation, Copilot, privacy..." autocomplete="off">
@@ -37,7 +35,6 @@
           <label for="topic">Topic</label><select id="topic"><option value="">All topics</option></select>
           <label for="resource-need">Answers questions in parent job</label><select id="resource-need"><option value="">Any (including unmapped)</option></select>
           <button id="reset" class="text-button">Clear all filters</button>
-          <div class="filter-note"><strong>Consolidate answers, not expertise.</strong><p>Keep authoritative policies, specialist guidance and service transactions with their accountable owners. Surface their answers from one hub.</p></div>
         </aside>
         <div class="results">
           <div id="quick-tags" class="chips" aria-label="Quick topic filters"></div>
@@ -52,7 +49,6 @@
     <section id="blueprint" class="panel" hidden></section>
     <section id="method" class="panel" hidden></section>
   </main>
-  <footer><span>YORK AI ATLAS <span class="muted">/ A consolidation decision aid</span></span><span>No analytics. No external scripts. Works offline after download.</span></footer>
   <dialog id="detail" aria-labelledby="detail-title"><div id="detail-content"></div></dialog>
 </body>
 </html>
