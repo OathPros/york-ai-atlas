@@ -7,6 +7,8 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 const root = path.join(__dirname, 'dist');
 const prefix = '/york-ai-atlas/';
 const files = fs.readdirSync(root);
+let simulateStaleCache = false;
+let staleScriptLoads = 0;
 const mime = {
   '.html': 'text/html',
   '.css': 'text/css',
@@ -25,7 +27,12 @@ const server = http.createServer((request, response) => {
   response.writeHead(200, {
     'Content-Type': `${mime[path.extname(name)] || 'text/plain'}; charset=utf-8`
   });
-  response.end(fs.readFileSync(path.join(root, name)));
+  if (simulateStaleCache && name === 'app.js') {
+    staleScriptLoads++;
+    response.end("document.getElementById('snapshot-date').textContent = 'Cached release';");
+  } else {
+    response.end(fs.readFileSync(path.join(root, name)));
+  }
 });
 
 async function main() {
@@ -43,6 +50,7 @@ async function main() {
     }
     console.log('PASS Every staged Pages asset and download is served beneath the repository subpath');
     const errors = [];
+    simulateStaleCache = true;
     const virtualConsole = new VirtualConsole();
     virtualConsole.on('jsdomError', error => errors.push(error.message));
     dom = await JSDOM.fromURL(base + '#view=needs&need=permission-default-when-syllabus-silent', {
@@ -71,6 +79,8 @@ async function main() {
     assert.ok(document.querySelector('#need-permission-default-when-syllabus-silent .callout.warning'));
     assert.equal(document.activeElement.closest('details').id, 'need-permission-default-when-syllabus-silent');
     console.log('PASS Hosted assets initialise the complete atlas and restore need deep links');
+    assert.equal(staleScriptLoads, 0, 'New HTML must not reuse a cached unversioned app.js');
+    console.log('PASS A previously cached app.js cannot break the new page after deployment');
     for (const element of document.querySelectorAll('a[href], link[href], script[src]')) {
       const raw = element.getAttribute('href') || element.getAttribute('src');
       if (/^(?:https?:|#|blob:)/.test(raw)) continue;
